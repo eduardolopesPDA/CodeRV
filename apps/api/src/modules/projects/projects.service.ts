@@ -2,13 +2,13 @@ import { prisma } from "../../infra/prisma/client";
 
 export interface ProjectInput {
   name: string;
-  description?: string;
-  objective?: string;
+  description?: string | null;
+  objective?: string | null;
   technologies?: string[];
   supportedLanguages?: string[];
-  architecture?: string;
-  conventions?: string;
-  additionalInfo?: string;
+  architecture?: string | null;
+  conventions?: string | null;
+  additionalInfo?: string | null;
 }
 
 export async function listProjectsForUser(userId: string) {

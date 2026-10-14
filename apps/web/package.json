@@ -6,14 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
     "@code-reviewer/shared": "*",
     "@monaco-editor/react": "^4.6.0",
+    "@tanstack/react-query": "^5.104.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.57.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2"
+    "react-router-dom": "^6.26.2",
+    "tailwind-merge": "^2.6.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",

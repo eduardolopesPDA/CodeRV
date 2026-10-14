@@ -1,258 +1,262 @@
-import { useState } from "react";
-import type { AnalysisDTO, FindingDTO } from "@code-reviewer/shared";
-import Button from "../../components/Button";
-import Card from "../../components/Card";
-import * as analysisApi from "../../lib/api-client/analysis";
+import { useMemo, useState, type ReactNode } from "react";
+import { CheckCircle2, Filter, Sparkles, Terminal } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { Surface } from "@/components/ui/Surface";
+import { EmptyState } from "@/components/ui/States";
+import { FindingCard } from "@/components/findings/FindingCard";
+import { Legend } from "@/components/findings/Legend";
+import { formatRelative, plural } from "@/lib/format";
+import {
+  DEPTH_LABELS,
+  SEVERITY_CLASSES,
+  SEVERITY_LABELS,
+  SOURCE_LABELS,
+} from "@/lib/labels";
+import type {
+  Analysis,
+  Finding,
+  FindingSource,
+  Severity,
+} from "@/lib/api/types";
+import { SEVERITY_ORDER } from "@/lib/labels";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  bugs: "Bugs",
-  seguranca: "Segurança",
-  performance: "Performance",
-  legibilidade: "Legibilidade",
-  boas_praticas: "Boas práticas",
-};
+const SOURCES: FindingSource[] = ["AI", "STATIC_ANALYSIS"];
 
-const SEVERITY_COLOR: Record<string, string> = {
-  ALTA: "bg-red-100 text-red-700 border-red-300",
-  MEDIA: "bg-amber-100 text-amber-700 border-amber-300",
-  BAIXA: "bg-carbon-100 text-carbon-600 border-carbon-300",
-};
+export function AnalysisResults({ analysis }: { analysis: Analysis }) {
+  const [severities, setSeverities] = useState<Severity[]>([]);
+  const [sources, setSources] = useState<FindingSource[]>([]);
+  const [onlyBlocking, setOnlyBlocking] = useState(false);
 
-const SEVERITY_DESCRIPTIONS: Record<string, string> = {
-  ALTA: "Alta: problema significativo — pode causar falhas, riscos de segurança ou violar uma regra crítica do projeto. Merece atenção prioritária.",
-  MEDIA: "Média: problema relevante que vale corrigir, mas não é crítico nem bloqueante.",
-  BAIXA: "Baixa: observação menor, de estilo ou boas práticas, sem impacto direto no funcionamento do código.",
-};
+  const counts = useMemo(() => {
+    const map: Record<Severity, number> = { ALTA: 0, MEDIA: 0, BAIXA: 0 };
+    analysis.findings.forEach((finding) => {
+      map[finding.severity] += 1;
+    });
+    return map;
+  }, [analysis.findings]);
 
-const CLASSIFICATION_LABELS: Record<string, string> = {
-  tecnico: "Técnico",
-  regra_negocio: "Regra de negócio",
-  estilo: "Estilo",
-  sugestao: "Sugestão",
-};
+  const blockingCount = analysis.findings.filter((f) => f.isBlocking).length;
 
-const CLASSIFICATION_DESCRIPTIONS: Record<string, string> = {
-  tecnico: "Técnico: achado sobre o código em si (ex.: bug, performance), identificado por análise estática ou pela IA.",
-  regra_negocio: "Regra de negócio: o código contraria uma regra de negócio cadastrada neste projeto.",
-  estilo: "Estilo: questão de estilo ou convenção de código, sem afetar o funcionamento.",
-  sugestao: "Sugestão: recomendação de melhoria da IA — não necessariamente um problema.",
-};
+  const visible = useMemo(() => {
+    const list = analysis.findings.filter((finding) => {
+      if (severities.length > 0 && !severities.includes(finding.severity))
+        return false;
+      if (sources.length > 0 && !sources.includes(finding.source)) return false;
+      if (onlyBlocking && !finding.isBlocking) return false;
+      return true;
+    });
 
-const CONFIDENCE_DESCRIPTION =
-  "Nível de confiança da IA nessa conclusão, de 0 a 100%. Quanto mais alto, mais certeza a IA tem de que o achado é real.";
+    return [...list].sort((a, b) => {
+      if (a.isBlocking !== b.isBlocking) return a.isBlocking ? -1 : 1;
+      const severityDiff =
+        SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
+      if (severityDiff !== 0) return severityDiff;
+      return b.confidence - a.confidence;
+    });
+  }, [analysis.findings, severities, sources, onlyBlocking]);
 
-const SOURCE_DESCRIPTION =
-  "De onde veio esse achado: ferramenta de análise estática (ESLint/Ruff) ou avaliação da IA.";
-
-export default function AnalysisResults({
-  analysis,
-  onAnalysisUpdated,
-}: {
-  analysis: AnalysisDTO;
-  onAnalysisUpdated: (analysis: AnalysisDTO) => void;
-}) {
-  async function refresh() {
-    onAnalysisUpdated(await analysisApi.getAnalysis(analysis.id));
+  function toggle<T>(list: T[], value: T): T[] {
+    return list.includes(value)
+      ? list.filter((item) => item !== value)
+      : [...list, value];
   }
+
+  const hasFilters =
+    severities.length > 0 || sources.length > 0 || onlyBlocking;
 
   return (
     <div className="space-y-4">
-      <Card as="details" className="text-sm !p-3">
-        <summary className="text-carbon-600 cursor-pointer font-medium">
-          O que significam esses rótulos?
-        </summary>
-        <div className="mt-3 space-y-3 text-carbon-600">
+      <Surface className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="font-medium text-carbon-700 mb-1">Severidade</p>
-            <ul className="space-y-1">
-              {Object.entries(SEVERITY_DESCRIPTIONS).map(([key, desc]) => (
-                <li key={key} className="flex gap-2">
-                  <span
-                    className={`shrink-0 px-2 py-0.5 rounded-full border text-xs h-fit ${SEVERITY_COLOR[key]}`}
-                  >
-                    {key}
-                  </span>
-                  <span>{desc}</span>
-                </li>
-              ))}
-            </ul>
+            <h2 className="text-[15px] font-semibold text-ink">Resultados</h2>
+            <p className="mt-1 text-[11px] text-subtle">
+              {DEPTH_LABELS[analysis.depth]} · {formatRelative(analysis.createdAt)}{" "}
+              · {plural(analysis.findings.length, "achado", "achados")}
+            </p>
           </div>
-          <div>
-            <p className="font-medium text-carbon-700 mb-1">Classificação</p>
-            <ul className="space-y-1">
-              {Object.entries(CLASSIFICATION_DESCRIPTIONS).map(([key, desc]) => (
-                <li key={key} className="flex gap-2">
-                  <span className="shrink-0 px-2 py-0.5 rounded-full bg-carbon-100 text-xs h-fit">
-                    {CLASSIFICATION_LABELS[key]}
-                  </span>
-                  <span>{desc}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <p>
-            <span className="font-medium text-carbon-700">Confiança:</span> {CONFIDENCE_DESCRIPTION}
-          </p>
-          <p>
-            <span className="font-medium text-carbon-700">Origem:</span> {SOURCE_DESCRIPTION}
-          </p>
-        </div>
-      </Card>
 
-      {analysis.categoriesWithNoFindings.length > 0 && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl p-3">
-          Categorias analisadas sem nenhum problema encontrado:{" "}
-          {analysis.categoriesWithNoFindings.map((c) => CATEGORY_LABELS[c] ?? c).join(", ")}.
+          <div className="flex flex-wrap items-center gap-3">
+            {SEVERITY_ORDER.map((severity) => (
+              <div
+                key={severity}
+                className="flex items-center gap-1.5"
+                title={SEVERITY_LABELS[severity]}
+              >
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    SEVERITY_CLASSES[severity].bar,
+                  )}
+                  aria-hidden
+                />
+                <span className="font-mono text-sm font-semibold text-ink">
+                  {counts[severity]}
+                </span>
+                <span className="text-[11px] text-subtle">
+                  {SEVERITY_LABELS[severity].toLowerCase()}
+                </span>
+              </div>
+            ))}
+            {blockingCount > 0 ? (
+              <span className="rounded-full border border-sev-alta-line bg-sev-alta-soft px-2.5 py-1 text-[11px] font-semibold text-sev-alta">
+                {plural(blockingCount, "bloqueio", "bloqueios")}
+              </span>
+            ) : (
+              <span className="rounded-full border border-positive-line bg-positive-soft px-2.5 py-1 text-[11px] font-semibold text-positive">
+                sem bloqueios
+              </span>
+            )}
+          </div>
         </div>
+
+        {analysis.categoriesWithNoFindings.length > 0 ? (
+          <div className="mt-4 flex items-start gap-2.5 rounded-field border border-positive-line bg-positive-soft px-3 py-2.5">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-positive" />
+            <p className="text-[13px] leading-relaxed text-positive">
+              Nada encontrado em{" "}
+              {analysis.categoriesWithNoFindings.join(", ")}.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4">
+          <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">
+            <Filter className="h-3.5 w-3.5" />
+            Filtros
+          </span>
+
+          {SEVERITY_ORDER.map((severity) => (
+            <FilterChip
+              key={severity}
+              active={severities.includes(severity)}
+              onClick={() => setSeverities((prev) => toggle(prev, severity))}
+              dotClass={SEVERITY_CLASSES[severity].bar}
+            >
+              {SEVERITY_LABELS[severity]}
+            </FilterChip>
+          ))}
+
+          {SOURCES.map((source) => (
+            <FilterChip
+              key={source}
+              active={sources.includes(source)}
+              onClick={() => setSources((prev) => toggle(prev, source))}
+            >
+              {source === "AI" ? (
+                <Sparkles className="h-3 w-3" />
+              ) : (
+                <Terminal className="h-3 w-3" />
+              )}
+              {SOURCE_LABELS[source]}
+            </FilterChip>
+          ))}
+
+          <FilterChip
+            active={onlyBlocking}
+            onClick={() => setOnlyBlocking((value) => !value)}
+          >
+            Só bloqueios
+          </FilterChip>
+
+          {hasFilters ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSeverities([]);
+                setSources([]);
+                setOnlyBlocking(false);
+              }}
+              className="ml-auto text-[11px] font-semibold text-subtle underline-offset-4 hover:text-ink hover:underline"
+            >
+              Limpar filtros
+            </button>
+          ) : null}
+        </div>
+      </Surface>
+
+      <Legend />
+
+      {visible.length === 0 ? (
+        <EmptyState
+          icon={<CheckCircle2 className="h-5 w-5" />}
+          title={
+            analysis.findings.length === 0
+              ? "Nenhum achado nesta rodada"
+              : "Nada passa pelos filtros"
+          }
+          description={
+            analysis.findings.length === 0
+              ? "O código passou pelas regras cadastradas, pelo linter e pela revisão da IA sem apontamentos."
+              : "Ajuste ou limpe os filtros para ver os outros achados."
+          }
+        />
+      ) : (
+        <ul className="space-y-3">
+          {visible.map((finding) => (
+            <ResultItem
+              key={finding.id}
+              analysisId={analysis.id}
+              finding={finding}
+              onUpdated={handleFindingUpdated}
+            />
+          ))}
+        </ul>
       )}
-
-      <ul className="space-y-3">
-        {analysis.findings.map((finding) => (
-          <FindingCard key={finding.id} analysisId={analysis.id} finding={finding} onUpdated={refresh} />
-        ))}
-        {analysis.findings.length === 0 && (
-          <p className="text-sm text-carbon-300">Nenhuma ocorrência encontrada em nenhuma categoria.</p>
-        )}
-      </ul>
     </div>
   );
+
+  function handleFindingUpdated(_updated: Finding) {
+    /* o cache da análise já é atualizado dentro do FindingCard */
+  }
 }
 
-function FindingCard({
+function ResultItem({
   analysisId,
   finding,
   onUpdated,
 }: {
   analysisId: string;
-  finding: FindingDTO;
-  onUpdated: () => void;
+  finding: Finding;
+  onUpdated: (finding: Finding) => void;
 }) {
-  const [answer, setAnswer] = useState("");
-  const [applyToContext, setApplyToContext] = useState(false);
-  const [disputeMessage, setDisputeMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const pendingClarification = finding.clarifications.find((c) => !c.answeredAt);
-
-  async function handleClarify() {
-    if (!answer.trim()) return;
-    setBusy(true);
-    setActionError(null);
-    try {
-      await analysisApi.clarifyFinding(analysisId, finding.id, answer, applyToContext);
-      setAnswer("");
-      onUpdated();
-    } catch (err) {
-      setActionError(
-        analysisApi.getAiErrorMessage(err) ?? "Não foi possível enviar a resposta. Tente novamente."
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDispute() {
-    if (!disputeMessage.trim()) return;
-    setBusy(true);
-    setActionError(null);
-    try {
-      await analysisApi.disputeFinding(analysisId, finding.id, disputeMessage);
-      setDisputeMessage("");
-      onUpdated();
-    } catch (err) {
-      setActionError(
-        analysisApi.getAiErrorMessage(err) ?? "Não foi possível enviar a contestação. Tente novamente."
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <Card as="li" className={`space-y-2 ${finding.isBlocking ? "border-red-300" : ""}`}>
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="px-2 py-0.5 rounded-full bg-carbon-100 text-carbon-600">
-          {CATEGORY_LABELS[finding.category] ?? finding.category}
-        </span>
-        <span
-          className="px-2 py-0.5 rounded-full bg-carbon-100 text-carbon-600"
-          title={CLASSIFICATION_DESCRIPTIONS[finding.classification]}
-        >
-          {CLASSIFICATION_LABELS[finding.classification] ?? finding.classification}
-        </span>
-        <span
-          className={`px-2 py-0.5 rounded-full border ${SEVERITY_COLOR[finding.severity]}`}
-          title={SEVERITY_DESCRIPTIONS[finding.severity]}
-        >
-          {finding.severity}
-        </span>
-        <span className="text-carbon-400" title={CONFIDENCE_DESCRIPTION}>
-          confiança: {finding.confidence}%
-        </span>
-        <span className="text-carbon-400" title={SOURCE_DESCRIPTION}>
-          origem: {finding.source === "AI" ? "IA" : "análise estática"}
-        </span>
-        {finding.isBlocking && (
-          <span
-            className="px-2 py-0.5 rounded-full bg-red-600 text-white"
-            title="Achado de alta severidade com uma dúvida em aberto — a IA precisa da sua resposta antes de confirmar a conclusão."
-          >
-            aguardando esclarecimento
-          </span>
-        )}
-      </div>
+    <FindingCard
+      analysisId={analysisId}
+      finding={finding}
+      onUpdated={onUpdated}
+      defaultOpen={finding.isBlocking}
+    />
+  );
+}
 
-      <p className="text-sm text-carbon-800 font-semibold mt-2">{finding.location}</p>
-      <p className="text-sm text-carbon-700">{finding.description}</p>
-      <p className="text-xs text-carbon-500 mt-1">Evidência: {finding.evidence}</p>
-      {finding.suggestion && <p className="text-xs text-carbon-500">Sugestão: {finding.suggestion}</p>}
-      {actionError && <p className="text-xs text-red-600 mt-1">{actionError}</p>}
-
-      {pendingClarification && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2 text-sm mt-3">
-          <p className="text-amber-800 font-medium">{pendingClarification.question}</p>
-          <textarea
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            rows={2}
-            className="w-full border border-carbon-200 rounded-xl px-2 py-1.5 text-sm text-carbon-900 focus:outline-none focus:ring-2 focus:ring-papaya-400"
-            placeholder="Sua resposta..."
-          />
-          <label className="flex items-center gap-1.5 text-xs text-carbon-600">
-            <input
-              type="checkbox"
-              checked={applyToContext}
-              onChange={(e) => setApplyToContext(e.target.checked)}
-              className="accent-papaya-500"
-            />
-            Adicionar esta resposta ao contexto permanente do projeto
-          </label>
-          <Button size="sm" onClick={handleClarify} disabled={busy}>
-            Responder
-          </Button>
-        </div>
+function FilterChip({
+  active,
+  onClick,
+  dotClass,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  dotClass?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+        active
+          ? "border-papaya-500/40 bg-papaya-500/12 text-papaya-300"
+          : "border-line-strong bg-raised text-muted hover:text-ink",
       )}
-
-      {!pendingClarification && (
-        <details className="text-sm mt-3">
-          <summary className="text-carbon-500 cursor-pointer hover:text-papaya-600">
-            Contestar esta conclusão
-          </summary>
-          <div className="mt-2 space-y-2">
-            <textarea
-              value={disputeMessage}
-              onChange={(e) => setDisputeMessage(e.target.value)}
-              rows={2}
-              className="w-full border border-carbon-200 rounded-xl px-2 py-1.5 text-sm text-carbon-900 focus:outline-none focus:ring-2 focus:ring-papaya-400"
-              placeholder="Explique por que discorda..."
-            />
-            <Button size="sm" variant="ghost" onClick={handleDispute} disabled={busy}>
-              Enviar contestação
-            </Button>
-          </div>
-        </details>
-      )}
-    </Card>
+    >
+      {dotClass ? (
+        <span className={cn("h-1.5 w-1.5 rounded-full", dotClass)} aria-hidden />
+      ) : null}
+      {children}
+    </button>
   );
 }

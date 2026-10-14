@@ -1,48 +1,18 @@
-import { ReactElement } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { AuthProvider, useAuth } from "./features/auth/AuthContext";
-import LoginPage from "./features/auth/LoginPage";
-import RegisterPage from "./features/auth/RegisterPage";
-import ProjectDetailPage from "./features/projects/ProjectDetailPage";
-import ProjectsPage from "./features/projects/ProjectsPage";
-import Layout from "./Layout";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "react-router-dom";
+import { ToastProvider } from "@/components/ui/Toast";
+import { AuthProvider } from "@/features/auth/AuthContext";
+import { queryClient } from "@/lib/query/client";
+import { router } from "@/routes";
 
-function PrivateRoute({ children }: { children: ReactElement }) {
-  const { user, loading } = useAuth();
-  if (loading) return <p className="text-carbon-300 p-6">Carregando...</p>;
-  if (!user) return <Navigate to="/login" replace />;
-  return children;
-}
-
-function AppRoutes() {
+export function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route
-        path="/"
-        element={
-          <PrivateRoute>
-            <Layout />
-          </PrivateRoute>
-        }
-      >
-        <Route index element={<Navigate to="/projects" replace />} />
-        <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:projectId" element={<ProjectDetailPage />} />
-      </Route>
-    </Routes>
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>
+        <AuthProvider>
+          <RouterProvider router={router} />
+        </AuthProvider>
+      </ToastProvider>
+    </QueryClientProvider>
   );
 }
-
-function App() {
-  return (
-    <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
-    </BrowserRouter>
-  );
-}
-
-export default App;

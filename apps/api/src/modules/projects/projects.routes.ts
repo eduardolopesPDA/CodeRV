@@ -21,13 +21,13 @@ projectsRouter.get("/", async (req: AuthenticatedRequest, res) => {
 const projectInputSchema = z.object({
   teamId: z.string().uuid(),
   name: z.string().min(1),
-  description: z.string().optional(),
-  objective: z.string().optional(),
+  description: z.string().nullish(),
+  objective: z.string().nullish(),
   technologies: z.array(z.string()).optional(),
   supportedLanguages: z.array(z.string()).optional(),
-  architecture: z.string().optional(),
-  conventions: z.string().optional(),
-  additionalInfo: z.string().optional(),
+  architecture: z.string().nullish(),
+  conventions: z.string().nullish(),
+  additionalInfo: z.string().nullish(),
 });
 
 projectsRouter.post("/", async (req: AuthenticatedRequest, res) => {
